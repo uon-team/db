@@ -1,0 +1,23 @@
+{
+  "name": "@uon/db",
+  "version": "0.9.0",
+  "description": "",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "peerDependencies": {
+    "@uon/core": "^0.9.0",
+    "@uon/model": "^0.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^10.11.0"
+  },
+  "dependencies": {
+    "@types/mongodb": "^3.1.23",
+    "mongodb": "^3.2.3"
+  }
+}
