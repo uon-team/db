@@ -270,6 +270,14 @@ export class DbContext {
             _id: obj_id ? new ObjectId(obj_id) : new ObjectId()
         };
 
+        // fetch hook and run some
+        const has_hooks = this.hasHooks('updateOne');
+        let document: any;
+        // get documents into memory before running the delete op
+        if (has_hooks) {
+            document = await collection.findOne(query);
+        }
+
         // prepare the update operation
         const op: any = this.prepareUpdateOp(obj, def, extraOps);
 
@@ -281,7 +289,7 @@ export class DbContext {
             (obj as any)[def.id.key] = result.upsertedId._id.toHexString();
         }
 
-        await this.invokeHooks('updateOne', { def, result, options, op, target: obj });
+        await this.invokeHooks('updateOne', { def, result, options, op, target: obj, value: document });
 
 
         return result;
@@ -301,15 +309,28 @@ export class DbContext {
         this.formatOptions(options);
 
 
+        // fetch hook and run some
+        const has_hooks = this.hasHooks('updateMany');
+        let documents: any[];
+
+        const q = this.normalizeQuery(def, query);
+
+        // get documents into memory before running the delete op
+        if (has_hooks) {
+            const cursor = await collection.find(q);
+            documents = await cursor.toArray();
+        }
+
+
         const result = await collection.updateMany(
-            this.normalizeQuery(def, query),
+            q,
             ops,
             options
         );
 
-        // run hooks
 
-        await this.invokeHooks('updateMany', { def, result, options, query, op: ops });
+        // run hooks
+        await this.invokeHooks('updateMany', { def, result, options, query, op: ops, values: documents });
 
 
         return result;
@@ -709,9 +730,12 @@ function CastIdsAsRefs<T>(def: ModelDefinition<T>, value: any) {
     const ref_keys = Object.keys(def.refsByKey);
 
 
-    // map _id to model id field
-    value[def.id.key] = value._id.toHexString();
-    delete value._id;
+    // map _id to model id field, if defined
+    if (value._id) {
+        value[def.id.key] = value._id.toHexString();
+        delete value._id;
+    }
+
 
     for (let i = 0; i < ref_keys.length; ++i) {
 

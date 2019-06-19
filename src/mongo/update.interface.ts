@@ -3,7 +3,7 @@ import { Unpack, PropertyNamesOfType, PropertyNamesNotOfType } from '@uon/core';
 
 
 
-export type AssignmentOp<T> = Partial<Pick<T, PropertyNamesNotOfType<T, Function>>>;
+export type AssignmentOp<T> = Partial<Pick<T, PropertyNamesNotOfType<T, Function>>> & { [k: string]: any };
 
 export type ArithmeticOp<T> = Partial<Pick<T, PropertyNamesOfType<T, number>>>;
 

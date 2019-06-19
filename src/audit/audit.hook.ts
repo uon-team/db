@@ -3,7 +3,7 @@ import { IContextHook, InsertOneHookParams, InsertManyHookParams, UpdateOneHookP
 import { DbContext } from "../db.context";
 import { AuditLogEntry } from "./entry.interface";
 import { ObjectId } from 'mongodb';
-import { DbModuleConfig, DB_MODULE_CONFIG } from "src/db.config";
+import { DbModuleConfig, DB_MODULE_CONFIG } from "../db.config";
 
 export function AuditHook(userId: string, metadata?: any) {
 
@@ -71,8 +71,6 @@ export function AuditHook(userId: string, metadata?: any) {
                 return;
             }
 
-            params.target
-
             const collection = this.context.db.collection(collection_name);
 
             const oid = new ObjectId((params.target as any)[params.def.id.key]);
@@ -84,7 +82,7 @@ export function AuditHook(userId: string, metadata?: any) {
                 op: 'update',
                 collection: params.def.collName,
                 oid,
-                opData: { _op: JSON.stringify(params.op) },
+                opData: { _op: JSON.stringify(params.op), prev: params.value },
                 createdOn: new Date()
             };
 
@@ -101,12 +99,9 @@ export function AuditHook(userId: string, metadata?: any) {
             const collection = this.context.db.collection(collection_name);
             const real_collection = this.context.db.collection(params.def.collName);
 
-            // find docs
-            let cursor = await real_collection.find(params.query, { projection: { _id: 1 } });
-            const docs = await cursor.toArray();
+            const docs = params.values;
 
             const _op = JSON.stringify(params.op);
-
             const entries = docs.map((d) => {
 
                 return <AuditLogEntry>{
@@ -116,7 +111,7 @@ export function AuditHook(userId: string, metadata?: any) {
                     op: 'update',
                     collection: params.def.collName,
                     oid: d._id,
-                    opData: { _op },
+                    opData: { _op, prev: d },
                     createdOn: new Date()
                 };
 

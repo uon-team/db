@@ -46,6 +46,7 @@ export interface UpdateOneHookParams<T = any> extends CommonHookParams {
     op: any;
     options: UpdateOneOptions;
     result: UpdateWriteOpResult;
+    value: T;
 }
 
 export interface UpdateManyHookParams<T = any> extends CommonHookParams {
@@ -53,6 +54,7 @@ export interface UpdateManyHookParams<T = any> extends CommonHookParams {
     op: any;
     options: UpdateManyOptions;
     result: UpdateWriteOpResult;
+    values: T[];
 }
 
 export interface DeleteOneHookParams<T = any> extends CommonHookParams {
