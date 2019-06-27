@@ -489,7 +489,7 @@ export class DbContext {
         keyPrefix = keyPrefix ? keyPrefix + '.' : '';
 
         const m = (obj as any);
-        const dirty = Model.GetMutations(obj);
+        const dirty: any = Model.GetMutations(obj);
 
 
         for (let i = 0; i < def.members.length; ++i) {
