@@ -547,7 +547,11 @@ export class DbContext {
     prepareInsertOp<T>(obj: T, def: ModelDefinition<T>) {
 
         const result: any = def.serializer.serialize(obj);
-        delete result[def.id.key];
+
+        if(IsNativeId(result[def.id.key])) {
+            result._id = new ObjectId(result[def.id.key]);
+            delete result[def.id.key];
+        }
 
         for (let k in def.refsByKey) {
             let id = def.refsByKey[k];
@@ -760,6 +764,10 @@ function CastIdsAsRefs<T>(def: ModelDefinition<T>, value: any) {
 
     return value;
 
+}
+
+function IsNativeId(value: any) {
+    return value && String(value).match(/^[a-fA-F0-9]{24}$/) !== null;
 }
 
 const ID_TO_STRING = (id: ObjectId) => id.toHexString();
