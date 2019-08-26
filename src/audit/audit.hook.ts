@@ -159,7 +159,7 @@ export function AuditHook(userId: string, metadata?: any) {
                     userId: user_id,
                     metadata,
                     options: params.options,
-                    op: 'update',
+                    op: 'delete',
                     collection: params.def.collName,
                     oid: d._id,
                     opData: d,
