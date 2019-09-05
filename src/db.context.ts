@@ -555,7 +555,11 @@ export class DbContext {
 
         for (let k in def.refsByKey) {
             let id = def.refsByKey[k];
-            result[k] = new ObjectId(result[k][id.key]);
+
+            if(result[k]) {
+                result[k] = new ObjectId(result[k][id.key]);
+            }
+            
         }
 
         return result;
@@ -579,7 +583,7 @@ export class DbContext {
             // handle _id
             if (key === '_id' || key === def.id.key) {
                 delete query[key];
-                query['_id'] = FormatQueryField(value, def.id);
+                (query as any)['_id'] = FormatQueryField(value, def.id);
                 continue;
             }
 
@@ -587,7 +591,7 @@ export class DbContext {
             const ref = def.refsByKey[key];
 
             if (ref) {
-                query[key] = FormatQueryField(value, ref);
+                (query as any)[key] = FormatQueryField(value, ref);
             }
         }
 
