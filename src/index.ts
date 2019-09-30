@@ -12,3 +12,5 @@ export * from './mongo/update.interface';
 export * from './mongo/index.interface';
 
 export * from './audit/audit.hook';
+
+export { ObjectId as NativeId } from 'mongodb';
