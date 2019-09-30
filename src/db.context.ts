@@ -707,7 +707,11 @@ export class DbContext {
 
         for (let k in def.refsByKey) {
             let id = def.refsByKey[k];
-            result[k] = new ObjectId(result[k][id.key]);
+
+            if(result[k]) {
+                result[k] = new ObjectId(result[k][id.key]);
+            }
+            
         }
 
         return result;
