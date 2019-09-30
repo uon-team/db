@@ -1,7 +1,7 @@
 import { MongoClient, Db, ClientSession, ObjectId, UpdateOneOptions, UpdateManyOptions, CollectionInsertManyOptions, CollectionInsertOneOptions, CommonOptions, FindOneAndDeleteOption, CollectionAggregationOptions, MongoCountPreferences } from "mongodb";
 import { Type, Injector, Provider } from "@uon/core";
-import { ID, JsonSerializer, Model, FindModelAnnotation, GetModelMembers } from "@uon/model";
-import { Query } from "./mongo/query.interface";
+import { ID, JsonSerializer, Model, FindModelAnnotation, GetModelMembers, Member } from "@uon/model";
+import { Query, QueryProjection } from "./mongo/query.interface";
 import { ModelDefinition } from "./db.interfaces";
 import { Update } from "./mongo/update.interface";
 import { AggregateQuery } from "./mongo/aggregate.interface";
@@ -438,9 +438,161 @@ export class DbContext {
      * @param list 
      * @param fields 
      */
-    async dereference<T>() {
+    async dereference<T>(docs: T[], fields: { [k: string]: QueryProjection<any> }) {
 
-        throw new Error('Not implemented');
+        if (docs.length === 0) {
+            return docs;
+        }
+
+
+        const field_keys = Object.keys(fields);
+
+        const ref_list_by_type = new Map<Type<any>, string[]>();
+        const proj_by_type = new Map<Type<any>, QueryProjection<any>>();
+
+        const type = (docs[0] as any).constructor;
+        const def = this.getOrCreateDefinition(type as Type<T>);
+
+        const members: Member[] = [];
+
+        for (let i = 0; i < field_keys.length; ++i) {
+            const k = field_keys[i];
+            const m = def.members.find((v, i, o) => {
+                return v.key === k && v.model && v.model.id != null;
+            });
+            if (m) {
+                // should be by field, but optimal this way
+                proj_by_type.set(m.type, fields[k])
+                members.push(m)
+            }
+        }
+
+        for (let i = 0; i < docs.length; ++i) {
+
+            const d: any = docs[i];
+
+            for (let j = 0; j < members.length; ++j) {
+                const m = members[j];
+                const m_type = m.type;
+                const m_def = this.getOrCreateDefinition(m_type, false);
+                let id_list: string[] = ref_list_by_type.get(m_type);
+
+                // lazy init of type map
+                if (!id_list) {
+                    id_list = [];
+                    ref_list_by_type.set(m_type, id_list);
+                }
+
+
+                if (Array.isArray(d[m.key])) {
+
+                    d[m.key].forEach((ref: any) => {
+                        let canonical_id = ref[m_def.id.key].toString();
+                        if (id_list.indexOf(canonical_id) === -1) {
+                            id_list.push(canonical_id);
+                        }
+                    });
+
+                }
+                // or just a single ref
+                else if(d[m.key]) {
+
+                    let canonical_id = d[m.key][m_def.id.key].toString();
+                    if (id_list.indexOf(canonical_id) === -1) {
+                        id_list.push(canonical_id);
+                    }
+
+                }
+
+            }
+        }
+
+        // much promise
+        var promises: Promise<any>[] = [];
+        var value_map = new Map();
+
+        // go over all ref lists by type
+        for (let [type, idList] of ref_list_by_type) {
+
+            let col_def = this.getOrCreateDefinition(type, false);
+
+            let map_by_id: any = {};
+            value_map.set(type, map_by_id);
+
+            // find all objects
+            let p = this.find(type, { '_id': { $in: idList } }, {
+                projection: proj_by_type.get(type)
+            })
+                .then((results) => {
+                    results.forEach((r) => {
+                        map_by_id[r[col_def.id.key]] = r;
+                    });
+
+                });
+
+            promises.push(p);
+
+        }
+
+        // wait for fetches to complete
+        await Promise.all(promises);
+
+
+         // finally assign the proper object where they belong
+         for (let i = 0, l = docs.length; i < l; ++i) {
+
+            let model = docs[i] as any;
+
+            // go over all referenced keys
+            for (let j = 0; j < members.length; ++j) {
+
+                let f = members[j];
+                let field_type = f.type;
+                let col_def = this.getOrCreateDefinition(type, false);
+
+                // get the id list for this type
+                let values = value_map.get(field_type);
+
+                // get the placeholder object
+                let old_value = model[f.key];
+
+                // ignore the rest if value undefined
+                if (!old_value) {
+                    continue;
+                }
+
+                // if we got an array of references
+                if (Array.isArray(old_value)) {
+
+                    // we want to replace elements in place to not mess up the ordering
+                    old_value.forEach((v: any, index: number) => {
+
+                        let canonical_id = v[col_def.id.key];
+                        old_value[index] = values[canonical_id];
+
+                    });
+
+                }
+                // or just a single ref
+                else {
+
+
+                    let canonical_id = old_value[col_def.id.key].toString();
+
+                    // assign new value if it is defined
+                    if (values[canonical_id] !== undefined) {
+                        model[f.key] = values[canonical_id];
+                    }
+
+
+                }
+
+            }
+
+        }
+
+        return docs;
+
     }
 
 
@@ -548,7 +700,7 @@ export class DbContext {
 
         const result: any = def.serializer.serialize(obj);
 
-        if(IsNativeId(result[def.id.key])) {
+        if (IsNativeId(result[def.id.key])) {
             result._id = new ObjectId(result[def.id.key]);
             delete result[def.id.key];
         }
@@ -579,7 +731,7 @@ export class DbContext {
             // handle _id
             if (key === '_id' || key === def.id.key) {
                 delete query[key];
-                query['_id'] = FormatQueryField(value, def.id);
+                (query as any)['_id'] = FormatQueryField(value, def.id);
                 continue;
             }
 
@@ -587,7 +739,7 @@ export class DbContext {
             const ref = def.refsByKey[key];
 
             if (ref) {
-                query[key] = FormatQueryField(value, ref);
+                (query as any)[key] = FormatQueryField(value, ref);
             }
         }
 
