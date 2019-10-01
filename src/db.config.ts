@@ -46,7 +46,7 @@ export interface DbConnectionConfig {
     name: string;
 
     /**
-     * The mongo url for this database
+     * The mongo url
      */
     url: string;
 
@@ -55,31 +55,18 @@ export interface DbConnectionConfig {
      */
     options?: MongoClientOptions;
 
-    /**
-     * A list of collection definitions for this database
-     */
-    collections: DbCollectionDefinition<any>[];
-
-
-    /**
-     * Whether to sync indices on app startup 
-     * USE WITH CARE, will only run on master process
-     */
-    syncIndicesOnStartup?: boolean;
-
 }
 
 
 
 export interface DbModuleConfig {
 
-
     /**
-     * A list of databases to initiate connections with
+     * A list of mongos to initiate connections with
      */
-    databases: DbConnectionConfig[];
+    connections: DbConnectionConfig[];
 
-
+    
 
 
 }

@@ -16,9 +16,29 @@ const HOOK_METHODS = ['count', 'findOne', 'find', 'insertOne', 'insertMany', 'up
 
 export interface DbContextOptions {
 
+    /**
+     * The mongo connection
+     */
     client: MongoClient;
-    collections: Map<Type<any>, ModelDefinition<any>>;
+
+    /**
+     * The mongo DB name
+     */
+    dbName: string;
+
+    /**
+     * The list of collections
+     */
+    collections: DbCollectionDefinition<any>[];
+
+    /**
+     * The injector to use to instanciate hooks
+     */
     injector: Injector;
+
+    /**
+     * A list of hooks to use
+     */
     hooks: DbHook[];
 
 }
@@ -34,11 +54,12 @@ export class DbContext {
     private _clientSession: ClientSession;
     private _hooksByMethod: { [k: string]: DbHook[] } = {};
     private _injector: Injector;
+    private _collections: Map<Type<any>, ModelDefinition<any>> = new Map();
 
     constructor(private _options: DbContextOptions) {
 
         this._client = _options.client;
-        this._db = this._client.db();
+        this._db = this._client.db(_options.dbName);
 
         const providers = [
             <Provider>{ token: DbContext, value: this }
@@ -46,26 +67,11 @@ export class DbContext {
 
         this._injector = Injector.Create(providers, _options.injector);
 
-        const hooks = _options.hooks;
-        const list = this._hooksByMethod;
+        // hooks setup
+        this.setupHooks()
 
-        for (let i = 0, l = hooks.length; i < l; ++i) {
-
-            const hook = hooks[i];
-            const proto = hook.prototype;
-
-            for (let j = 0, jl = HOOK_METHODS.length; j < jl; ++j) {
-                let name = HOOK_METHODS[j];
-
-                if (proto[name]) {
-                    list[name] = list[name] || [];
-                    list[name].push(hook);
-                }
-            }
-
-        }
-
-
+        // persistent model setup
+        this.setupModelDefinitions();
 
     }
 
@@ -273,7 +279,7 @@ export class DbContext {
         // fetch hook and run some
         const has_hooks = this.hasHooks('updateOne');
         let document: any;
-        // get documents into memory before running the delete op
+        // get documents into memory before running the update op
         if (has_hooks) {
             document = await collection.findOne(query);
         }
@@ -315,7 +321,7 @@ export class DbContext {
 
         const q = this.normalizeQuery(def, query);
 
-        // get documents into memory before running the delete op
+        // get documents into memory before running the update op
         if (has_hooks) {
             const cursor = await collection.find(q);
             documents = await cursor.toArray();
@@ -495,7 +501,7 @@ export class DbContext {
 
                 }
                 // or just a single ref
-                else if(d[m.key]) {
+                else if (d[m.key]) {
 
                     let canonical_id = d[m.key][m_def.id.key].toString();
                     if (id_list.indexOf(canonical_id) === -1) {
@@ -538,8 +544,8 @@ export class DbContext {
         await Promise.all(promises);
 
 
-         // finally assign the proper object where they belong
-         for (let i = 0, l = docs.length; i < l; ++i) {
+        // finally assign the proper object where they belong
+        for (let i = 0, l = docs.length; i < l; ++i) {
 
             let model = docs[i] as any;
 
@@ -615,13 +621,13 @@ export class DbContext {
     private getOrCreateDefinition<T>(type: Type<T>, throwOnNotFound = true) {
 
 
-        if (this._options.collections.has(type)) {
-            return this._options.collections.get(type) as ModelDefinition<T>;
+        if (this._collections.has(type)) {
+            return this._collections.get(type) as ModelDefinition<T>;
         }
 
         // for non-persistent models
         const def = CreateModelDefinition(type, null, throwOnNotFound);
-        this._options.collections.set(type, def);
+        this._collections.set(type, def);
 
         return def;
 
@@ -708,10 +714,10 @@ export class DbContext {
         for (let k in def.refsByKey) {
             let id = def.refsByKey[k];
 
-            if(result[k]) {
+            if (result[k]) {
                 result[k] = new ObjectId(result[k][id.key]);
             }
-            
+
         }
 
         return result;
@@ -794,6 +800,42 @@ export class DbContext {
         }
 
         return false;
+    }
+
+    private setupHooks() {
+
+        const hooks = this._options.hooks;
+        const list = this._hooksByMethod;
+
+        for (let i = 0, l = hooks.length; i < l; ++i) {
+
+            const hook = hooks[i];
+            const proto = hook.prototype;
+
+            for (let j = 0, jl = HOOK_METHODS.length; j < jl; ++j) {
+                let name = HOOK_METHODS[j];
+
+                if (proto[name]) {
+                    list[name] = list[name] || [];
+                    list[name].push(hook);
+                }
+            }
+
+        }
+    }
+
+    private setupModelDefinitions() {
+
+        const colls = this._options.collections;
+        const map = this._collections;
+
+        for (let j = 0; j < colls.length; ++j) {
+
+            const coll_def = colls[j];
+            const def = CreateModelDefinition(coll_def.model, coll_def.name);
+            map.set(coll_def.model, def);
+        }
+
     }
 
 

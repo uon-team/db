@@ -20,30 +20,31 @@ export class DbService {
         private _injector: Injector
     ) {
         // initialize
-        this.initModelDefs();
+       // this.initModelDefs();
     }
 
 
     /**
      * Creates a db request context, upon which db queries can be made
+     * @param connectionName The connection name defined in DbModule.WithConfig
+     * @param dbName The name of the mongo database
+     * @param collections A list of collection definitions to use in this context
+     * @param hooks A list of hooks 
+     * @param injector An optional injector for instanciating hooks, the root injector will be used if not provided
      */
-    async createContext(dbName: string, hooks: DbHook[], injector?: Injector) {
+    async createContext(connectionName: string, 
+        dbName: string, 
+        collections: DbCollectionDefinition<any>[],
+        hooks: DbHook[], 
+        injector?: Injector) {
 
         // fetch client
-        const client = await this.getClientByName(dbName);
-        const db_def = this._config.databases.find(d => d.name === dbName);
-
-        if (!db_def) {
-            throw new Error(`DbConnectionConfig with name ${dbName} not found. 
-            Did you mean one of [${this._config.databases.map(d => d.name)}]?`);
-        }
-
-        // generate model/collection definitions
-        const collections = this._modelDefCacheByDbName[dbName];
+        const client = await this.getClientByName(connectionName);
 
         // create context
         const context = new DbContext({
             client,
+            dbName,
             collections,
             injector: injector || this._injector,
             hooks
@@ -67,23 +68,27 @@ export class DbService {
 
     /**
      * 
+     * @param connectionName 
      * @param dbName 
+     * @param collections 
      */
-    async syncIndices(dbName: string) {
+    async syncIndices(connectionName: string, 
+        dbName: string, 
+        collections: DbCollectionDefinition<any>[]) {
 
-        const db_def = this.findDbOrThrow(dbName);
+        const conn_def = this.findConnectionOrThrow(connectionName);
 
         // connect to db
-        const client = new MongoClient(db_def.url, { useNewUrlParser: true });
+        const client = new MongoClient(conn_def.url, { useNewUrlParser: true });
         await client.connect();
 
         // grab db
-        const db = client.db();
+        const db = client.db(dbName);
 
         // iterate over all defined collection for this db
-        for (let i = 0; i < db_def.collections.length; ++i) {
+        for (let i = 0; i < collections.length; ++i) {
 
-            const col_def = db_def.collections[i];
+            const col_def = collections[i];
 
             // might not have any indices
             if (!col_def.indices) {
@@ -137,20 +142,16 @@ export class DbService {
                 await collection.createIndex(fields, ops);
             }
 
-            //client.
-
-            //await client.close();
-
         }
 
-
-
+        // close the connection
+        await client.close();
 
     }
 
-    private findDbOrThrow(name: string) {
+    private findConnectionOrThrow(name: string) {
 
-        const def = this._config.databases.find(d => d.name === name);
+        const def = this._config.connections.find(d => d.name === name);
 
         if (!def) {
             throw new Error(`No database connection with name "${name}" was defined in config.`)
@@ -166,9 +167,13 @@ export class DbService {
             return this._activeConnections[name];
         }
 
-        const def = this.findDbOrThrow(name);
+        const def = this.findConnectionOrThrow(name);
 
-        const client = new MongoClient(def.url, { useNewUrlParser: true, ...def.options });
+        const client = new MongoClient(def.url, { 
+            useNewUrlParser: true,
+            ...def.options 
+        });
+
         await client.connect();
 
         this._activeConnections[name] = client;
@@ -177,7 +182,7 @@ export class DbService {
 
     }
 
-    private initModelDefs() {
+   /* private initModelDefs() {
 
 
         const dbs = this._config.databases;
@@ -198,7 +203,7 @@ export class DbService {
 
         }
 
-    }
+    }*/
 }
 
 

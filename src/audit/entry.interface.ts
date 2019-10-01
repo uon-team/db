@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { Model, ID } from "@uon/model";
 
 export type AuditLogOp = 'delete' | 'restore' | 'insert' | 'update' ;
 
@@ -13,4 +14,13 @@ export interface AuditLogEntry {
     createdOn: Date;
     expiresOn?: Date;
     options?: object;
+}
+
+@Model()
+export class AuditEntry {
+
+    @ID()
+    id: string;
+    
+    userId: ObjectId;
 }
