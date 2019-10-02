@@ -27,7 +27,7 @@ export class DbModule {
                     token: DB_MODULE_CONFIG,
                     value: config
                 },
-                {
+               /* {
                     token: APP_INITIALIZER,
                     factory: async (service: DbService) => {
 
@@ -44,7 +44,7 @@ export class DbModule {
                     },
                     deps: [DbService],
                     multi: true
-                }
+                }*/
 
 
             ]
