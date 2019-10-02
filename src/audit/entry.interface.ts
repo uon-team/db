@@ -15,12 +15,3 @@ export interface AuditLogEntry {
     expiresOn?: Date;
     options?: object;
 }
-
-@Model()
-export class AuditEntry {
-
-    @ID()
-    id: string;
-    
-    userId: ObjectId;
-}
