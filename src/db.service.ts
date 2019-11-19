@@ -35,8 +35,8 @@ export class DbService {
     async createContext(connectionName: string, 
         dbName: string, 
         collections: DbCollectionDefinition<any>[],
-        hooks: DbHook[], 
-        injector?: Injector) {
+        hooks: DbHook[] = [], 
+        injector: Injector = this._injector) {
 
         // fetch client
         const client = await this.getClientByName(connectionName);
@@ -46,7 +46,7 @@ export class DbService {
             client,
             dbName,
             collections,
-            injector: injector || this._injector,
+            injector,
             hooks
         });
 
