@@ -1,27 +1,20 @@
 
-import { Injectable, Inject, Injector, Provider, Type } from '@uon/core';
+import { Injectable, Inject, Injector } from '@uon/core';
 import { DB_MODULE_CONFIG, DbModuleConfig, DbCollectionDefinition } from './db.config';
-import { DbContext, CreateModelDefinition } from './db.context';
-import { MongoClient, IndexOptions } from 'mongodb';
+import { DbContext } from './db.context';
+import { MongoClient } from 'mongodb';
 import { IndexDefinition } from './mongo/index.interface';
 import { DbHook } from './db.hooks';
-import { ModelDefinition } from './db.interfaces';
-import { Model, FindModelAnnotation, GetModelMembers, JsonSerializer } from '@uon/model';
-
 
 
 @Injectable()
 export class DbService {
 
     private _activeConnections: { [k: string]: MongoClient } = {};
-    private _modelDefCacheByDbName: { [k: string]: Map<Type<any>, ModelDefinition<any>> } = {};
 
     constructor(@Inject(DB_MODULE_CONFIG) private _config: DbModuleConfig,
         private _injector: Injector
-    ) {
-        // initialize
-       // this.initModelDefs();
-    }
+    ) { }
 
 
     /**
@@ -182,28 +175,6 @@ export class DbService {
 
     }
 
-   /* private initModelDefs() {
-
-
-        const dbs = this._config.databases;
-
-        for (let i = 0; i < dbs.length; ++i) {
-
-            const db_def = this._config.databases[i];
-            const colls = db_def.collections;
-            const map = this._modelDefCacheByDbName[db_def.name] = new Map();
-
-            for (let j = 0; j < colls.length; ++j) {
-
-                const coll_def = colls[j];
-                const def = CreateModelDefinition(coll_def.model, coll_def.name);
-                map.set(coll_def.model, def);
-
-            }
-
-        }
-
-    }*/
 }
 
 
