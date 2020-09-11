@@ -5,6 +5,7 @@ export * from './db.service';
 export * from './db.context';
 export * from './db.config';
 export * from './db.hooks';
+export * from './db.provider';
 
 export * from './mongo/aggregate.interface';
 export * from './mongo/query.interface';

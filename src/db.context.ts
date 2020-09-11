@@ -12,7 +12,7 @@ import { DbHook, CountHookParams, FindOneHookParams, FindHookParams, InsertOneHo
 
 
 const HOOK_METHODS = ['count', 'findOne', 'find', 'insertOne', 'insertMany', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany', 'aggregate'];
-
+const FORMATABLE_TOP_LEVEL_OPS = ['$or', '$and'];
 
 export interface DbContextOptions {
 
@@ -282,6 +282,11 @@ export class DbContext {
         // get documents into memory before running the update op
         if (has_hooks) {
             document = await collection.findOne(query);
+        }
+
+        // format extra ops
+        if (extraOps) {
+
         }
 
         // prepare the update operation
@@ -693,6 +698,10 @@ export class DbContext {
 
         }
 
+        // TODO handle array modifiers
+
+
+
         return out;
 
     }
@@ -714,7 +723,10 @@ export class DbContext {
         for (let k in def.refsByKey) {
             let id = def.refsByKey[k];
 
-            if (result[k]) {
+            if (Array.isArray(result[k])) {
+                result[k] = result[k].map((v: any) => new ObjectId(v[id.key]));
+            }
+            else if (result[k]) {
                 result[k] = new ObjectId(result[k][id.key]);
             }
 
@@ -859,9 +871,12 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
     const id = model.id;
     const members = GetModelMembers(model);
     const refs: any = {};
+    const ref_paths: any = {};
+
 
     members.forEach((m) => {
-        if (m.model && m.model.id) {
+        const mdl = m.model;
+        if (mdl && m.model.id) {
             refs[m.key] = m.model.id;
         }
     });
@@ -963,6 +978,7 @@ function CastIdsAsRefs<T>(def: ModelDefinition<T>, value: any) {
     return value;
 
 }
+
 
 function IsNativeId(value: any) {
     return value && String(value).match(/^[a-fA-F0-9]{24}$/) !== null;

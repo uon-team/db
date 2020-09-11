@@ -59,6 +59,19 @@ export class DbService {
 
     }
 
+    async disconnectAll() {
+
+        const keys = Object.keys(this._activeConnections);
+
+        for (let i = 0; i < keys.length; i++) {
+            const conn = this._activeConnections[keys[i]];
+
+            await conn.close(true);
+            this._activeConnections[keys[i]] = null;
+        }
+
+    }
+
     /**
      * 
      * @param connectionName 
@@ -72,7 +85,7 @@ export class DbService {
         const conn_def = this.findConnectionOrThrow(connectionName);
 
         // connect to db
-        const client = new MongoClient(conn_def.url, { useNewUrlParser: true });
+        const client = new MongoClient(conn_def.url, { useNewUrlParser: true, useUnifiedTopology: true });
         await client.connect();
 
         // grab db

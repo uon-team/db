@@ -1,6 +1,6 @@
 {
   "name": "@uon/db",
-  "version": "0.9.2",
+  "version": "0.10.0",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -24,6 +24,6 @@
     "@types/mongodb": "^3.1.23"
   },
   "dependencies": {
-    "mongodb": "^3.2.3"
+    "mongodb": "^3.5.9"
   }
 }

@@ -32,13 +32,13 @@ export interface FindHookParams<T = any> extends CommonHookParams {
 export interface InsertOneHookParams<T = any> extends CommonHookParams {
     data: T;
     options: CollectionInsertOneOptions;
-    result: InsertOneWriteOpResult;
+    result: InsertOneWriteOpResult<any>;
 }
 
 export interface InsertManyHookParams<T = any> extends CommonHookParams {
     data: T[];
     options: CollectionInsertManyOptions;
-    result: InsertWriteOpResult;
+    result: InsertWriteOpResult<any>;
 }
 
 export interface UpdateOneHookParams<T = any> extends CommonHookParams {
@@ -60,7 +60,7 @@ export interface UpdateManyHookParams<T = any> extends CommonHookParams {
 export interface DeleteOneHookParams<T = any> extends CommonHookParams {
     data: T;
     options: FindOneAndDeleteOption;
-    result: FindAndModifyWriteOpResultObject;
+    result: FindAndModifyWriteOpResultObject<any>;
 }
 
 export interface DeleteManyHookParams<T = any> extends CommonHookParams {
