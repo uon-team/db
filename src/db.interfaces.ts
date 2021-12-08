@@ -1,11 +1,12 @@
-import { ID, Member, JsonSerializer } from "@uon/model";
+import { ID, Member, JsonSerializer, Model } from "@uon/model";
 import { Type } from "@uon/core";
 import { Query } from "./mongo/query.interface";
 import { DeleteWriteOpResultObject, InsertWriteOpResult } from "mongodb";
 
 
 export interface ModelDefinition<T> {
-    type: Type<T>
+    type: Type<T>;
+    model: Model;
     id: ID;
     members: Member[];
     refsByKey: { [k: string]: ID };

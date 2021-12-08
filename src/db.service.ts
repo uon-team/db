@@ -25,10 +25,10 @@ export class DbService {
      * @param hooks A list of hooks 
      * @param injector An optional injector for instanciating hooks, the root injector will be used if not provided
      */
-    async createContext(connectionName: string, 
-        dbName: string, 
+    async createContext(connectionName: string,
+        dbName: string,
         collections: DbCollectionDefinition<any>[],
-        hooks: DbHook[] = [], 
+        hooks: DbHook[] = [],
         injector: Injector = this._injector) {
 
         // fetch client
@@ -78,14 +78,20 @@ export class DbService {
      * @param dbName 
      * @param collections 
      */
-    async syncIndices(connectionName: string, 
-        dbName: string, 
+    async syncIndices(connectionName: string,
+        dbName: string,
         collections: DbCollectionDefinition<any>[]) {
 
         const conn_def = this.findConnectionOrThrow(connectionName);
 
         // connect to db
-        const client = new MongoClient(conn_def.url, { useNewUrlParser: true, useUnifiedTopology: true });
+        const client = new MongoClient(conn_def.url, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+            socketOptions: {
+                family: 4
+            }
+        });
         await client.connect();
 
         // grab db
@@ -103,8 +109,12 @@ export class DbService {
 
             console.log(`Syncing indices for ${col_def.name}`);
 
-            await db.createCollection(col_def.name);
-
+            try {
+                await db.createCollection(col_def.name, {  });
+            }
+            catch(e) {
+                console.log(`Collection already exists:  ${col_def.name}`);
+            }
 
             // grab the collection 
             const collection = db.collection(col_def.name);
@@ -175,9 +185,15 @@ export class DbService {
 
         const def = this.findConnectionOrThrow(name);
 
-        const client = new MongoClient(def.url, { 
+        const client = new MongoClient(def.url, {
             useNewUrlParser: true,
-            ...def.options 
+            useUnifiedTopology: true,
+
+            // force ipv4
+            socketOptions: {
+                family: 4
+            },
+            ...def.options
         });
 
         await client.connect();

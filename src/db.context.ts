@@ -165,7 +165,7 @@ export class DbContext {
         );
 
         const document = result
-            ? def.serializer.deserialize(CastIdsAsRefs(def, result))
+            ? def.serializer.deserialize(CastIdsAsRefs(def.model, result))
             : null;
 
         await this.invokeHooks('findOne', { def, query, options, result: document });
@@ -194,7 +194,7 @@ export class DbContext {
         const result = await cursor.toArray();
 
         // convert to model instances
-        const documents = result.map(d => def.serializer.deserialize(CastIdsAsRefs(def, d)));
+        const documents = result.map(d => def.serializer.deserialize(CastIdsAsRefs(def.model, d)));
 
         await this.invokeHooks('find', { def, query, options, result: documents });
 
@@ -286,7 +286,7 @@ export class DbContext {
 
         // format extra ops
         if (extraOps) {
-
+            this.normalizeUpdateOp(def, extraOps);
         }
 
         // prepare the update operation
@@ -332,7 +332,9 @@ export class DbContext {
             documents = await cursor.toArray();
         }
 
-
+         // format ops
+        this.normalizeUpdateOp(def, ops);
+        
         const result = await collection.updateMany(
             q,
             ops,
@@ -639,6 +641,14 @@ export class DbContext {
 
     }
 
+
+    private normalizeUpdateOp<T>(def: ModelDefinition<T>, ops: any) {
+
+        if(ops['$set']) {
+            CastRefsAsIds(def.model, ops['$set']);
+        }
+    }
+
     /**
      * Generate an update operation that mongo will understand
      * @param obj 
@@ -720,17 +730,7 @@ export class DbContext {
             delete result[def.id.key];
         }
 
-        for (let k in def.refsByKey) {
-            let id = def.refsByKey[k];
-
-            if (Array.isArray(result[k])) {
-                result[k] = result[k].map((v: any) => new ObjectId(v[id.key]));
-            }
-            else if (result[k]) {
-                result[k] = new ObjectId(result[k][id.key]);
-            }
-
-        }
+        CastRefsAsIds(def.model, result);
 
         return result;
 
@@ -876,13 +876,17 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
 
     members.forEach((m) => {
         const mdl = m.model;
-        if (mdl && m.model.id) {
-            refs[m.key] = m.model.id;
+        if (mdl) {
+            if (mdl.id) {
+                refs[m.key] = m.model.id;
+            }
+
         }
     });
 
     const def: ModelDefinition<T> = {
         type,
+        model,
         id,
         members,
         collName,
@@ -942,40 +946,94 @@ function EnsureId(value: any, id: ID) {
     return value;
 }
 
-function CastIdsAsRefs<T>(def: ModelDefinition<T>, value: any) {
-
-    const ref_keys = Object.keys(def.refsByKey);
-
+function CastIdsAsRefs<T>(model: Model, value: any) {
 
     // map _id to model id field, if defined
-    if (value._id) {
-        value[def.id.key] = value._id.toHexString();
+    if (value._id && model.id) {
+        value[model.id.key] = value._id.toHexString();
         delete value._id;
     }
 
+    const members = GetModelMembers(model);
 
-    for (let i = 0; i < ref_keys.length; ++i) {
+    // check id member are themselves models 
+    for (let i = 0; i < members.length; ++i) {
 
-        const k = ref_keys[i];
-        const id = def.refsByKey[k];
+        const mem = members[i];
+        const k = mem.key;
 
-        if (value[k]) {
+        if (value[k] && mem.model) {
 
-            if (Array.isArray(value[k])) {
+            // persistant id
+            if (mem.model.id) {
 
-                value[k].forEach((v: any, index: number) => {
-                    value[k][index] = { [id.key]: ID_TO_STRING(value[k][index]) };
-                })
+                if (Array.isArray(value[k])) {
+                    value[k].forEach((v: any, index: number) => {
+                        value[k][index] = { [mem.model.id.key]: ID_TO_STRING(value[k][index]) };
+                    });
+                }
+                else {
+                    value[k] = { [mem.model.id.key]: ID_TO_STRING(value[k]) };
+                }
+
             }
             else {
-                value[k] = { [id.key]: ID_TO_STRING(value[k]) };
-            }
+                // go deep
 
+                if (Array.isArray(value[k])) {
+                    value[k].forEach((v: any, index: number) => {
+                        CastIdsAsRefs(mem.model as Model, value[k][index]);
+                    });
+                }
+                else {
+                    CastIdsAsRefs(mem.model as Model, value[k]);
+                }
+
+
+
+            }
         }
 
     }
 
     return value;
+
+}
+
+function CastRefsAsIds<T>(model: Model, value: any) {
+
+    const members = GetModelMembers(model);
+
+    for (let i = 0; i < members.length; ++i) {
+
+        const mem = members[i];
+        const k = mem.key;
+
+        if (value[k] && mem.model) {
+            // persistant id
+            if (mem.model.id) {
+
+                if (Array.isArray(value[k])) {
+                    value[k] = value[k].map((v: any) => new ObjectId(v[mem.model.id.key]));
+                }
+                else {
+                    value[k] = new ObjectId(value[k][mem.model.id.key]);
+                }
+            }
+            else {
+                // go deep
+                if (Array.isArray(value[k])) {
+                    value[k].forEach((v: any, index: number) => {
+                        CastRefsAsIds(mem.model as Model, value[k][index]);
+                    });
+                }
+                else {
+                    CastRefsAsIds(mem.model as Model, value[k]);
+                }
+            }
+
+        }
+    }
 
 }
 
