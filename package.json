@@ -1,6 +1,6 @@
 {
   "name": "@uon/db",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,15 +15,14 @@
     "url": "https://uon.io"
   },
   "peerDependencies": {
-    "@uon/core": "^0.10.1",
-    "@uon/model": "^0.10.2",
-    "tslib": "^1.10.0"
+    "@uon/core": "^0.11.0",
+    "@uon/model": "^0.11.0"
   },
   "devDependencies": {
-    "@types/node": "^16.11.12",
-    "@types/mongodb": "^4.0.7"
+    "@types/node": "^16.11.12"
   },
   "dependencies": {
-    "mongodb": "^4.2.1"
+    "mongodb": "^4.2.1",
+    "tslib": "^2.3.1"
   }
 }
