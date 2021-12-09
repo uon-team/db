@@ -1047,8 +1047,6 @@ function CastRefsAsIds<T>(model: Model, value: any) {
                     else {
                         CastRefsAsIds(mem.model as Model, value[k]);
                     }
-
-                    CastRefsAsIds(mem.model as Model, value[k]);
                 }
             }
 
@@ -1056,11 +1054,6 @@ function CastRefsAsIds<T>(model: Model, value: any) {
     }
 
 }
-
-function CastRefsAsIdsCommand(model: Model, value: any) {
-
-}
-
 
 function IsNativeId(value: any) {
     return value && String(value).match(/^[a-fA-F0-9]{24}$/) !== null;
