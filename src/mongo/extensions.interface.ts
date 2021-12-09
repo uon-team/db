@@ -1,9 +1,9 @@
-import { FindOneOptions } from "mongodb";
+import { FindOptions } from "mongodb";
 import { QueryProjection } from "./query.interface";
 import { SortableFields } from "./aggregate.interface";
 
 
-export interface FindOneOptionsEx<T> extends FindOneOptions {
+export interface FindOptionsEx<T> {
 
     /**
      * The fields to project in the result
@@ -15,5 +15,9 @@ export interface FindOneOptionsEx<T> extends FindOneOptions {
      */
     sort?: SortableFields<T>;
 
+    limit?: number;
+
+    skip?: number;
+   
 
 }

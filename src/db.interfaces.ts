@@ -1,8 +1,6 @@
 import { ID, Member, JsonSerializer, Model } from "@uon/model";
 import { Type } from "@uon/core";
 import { Query } from "./mongo/query.interface";
-import { DeleteWriteOpResultObject, InsertWriteOpResult } from "mongodb";
-
 
 export interface ModelDefinition<T> {
     type: Type<T>;

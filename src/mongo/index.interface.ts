@@ -1,4 +1,4 @@
-import { IndexOptions } from "mongodb";
+import { IndexDescription } from "mongodb";
 
 
 /**
@@ -17,7 +17,7 @@ export type IndexableMemberMap<T> = {
 /**
  * IndexDefinition
  */
-export interface IndexDefinition<T> extends IndexOptions {
+export interface IndexDefinition<T> {
 
     /**
      * The name of the index, be as verbose as possible

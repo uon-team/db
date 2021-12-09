@@ -86,11 +86,7 @@ export class DbService {
 
         // connect to db
         const client = new MongoClient(conn_def.url, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-            socketOptions: {
-                family: 4
-            }
+            family: 4
         });
         await client.connect();
 
@@ -111,9 +107,10 @@ export class DbService {
 
             try {
                 await db.createCollection(col_def.name, {  });
+                console.log(`Creating Collection ${col_def.name}`);
             }
             catch(e) {
-                console.log(`Collection already exists:  ${col_def.name}`);
+                
             }
 
             // grab the collection 
@@ -186,13 +183,7 @@ export class DbService {
         const def = this.findConnectionOrThrow(name);
 
         const client = new MongoClient(def.url, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true,
-
-            // force ipv4
-            socketOptions: {
-                family: 4
-            },
+            family: 4,
             ...def.options
         });
 

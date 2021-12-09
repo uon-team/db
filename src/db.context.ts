@@ -1,4 +1,4 @@
-import { MongoClient, Db, ClientSession, ObjectId, UpdateOneOptions, UpdateManyOptions, CollectionInsertManyOptions, CollectionInsertOneOptions, CommonOptions, FindOneAndDeleteOption, CollectionAggregationOptions, MongoCountPreferences } from "mongodb";
+import { MongoClient, Db, ClientSession, ObjectId, CountDocumentsOptions, Filter, DeleteOptions, FindOptions, OptionalId, InsertOneOptions, BulkWriteOptions, UpdateOptions, UpdateFilter, FindOneAndDeleteOptions, AggregateOptions } from "mongodb";
 import { Type, Injector, Provider } from "@uon/core";
 import { ID, JsonSerializer, Model, FindModelAnnotation, GetModelMembers, Member } from "@uon/model";
 import { Query, QueryProjection } from "./mongo/query.interface";
@@ -6,8 +6,8 @@ import { ModelDefinition } from "./db.interfaces";
 import { Update } from "./mongo/update.interface";
 import { AggregateQuery } from "./mongo/aggregate.interface";
 import { DbCollectionDefinition } from "./db.config";
-import { FindOneOptionsEx } from "./mongo/extensions.interface";
 import { DbHook, CountHookParams, FindOneHookParams, FindHookParams, InsertOneHookParams, InsertManyHookParams, UpdateOneHookParams, UpdateManyHookParams, DeleteOneHookParams, DeleteManyHookParams, AggregateHookParams } from "./db.hooks";
+import { FindOptionsEx } from "./mongo/extensions.interface";
 
 
 
@@ -41,6 +41,10 @@ export interface DbContextOptions {
      */
     hooks: DbHook[];
 
+}
+
+interface MongoDocument {
+    _id: any;
 }
 
 
@@ -130,14 +134,14 @@ export class DbContext {
      * @param query 
      * @param options 
      */
-    async count<T>(type: Type<T>, query: Query<T>, options: MongoCountPreferences = {}) {
+    async count<T>(type: Type<T>, query: Query<T>, options: CountDocumentsOptions = {}) {
 
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
         this.formatOptions(options);
 
         const result = await collection.countDocuments(
-            this.normalizeQuery(def, query),
+            this.normalizeQuery(def, query) as any,
             options
         );
 
@@ -153,15 +157,15 @@ export class DbContext {
      * @param query 
      * @param options 
      */
-    async findOne<T>(type: Type<T>, query: Query<T>, options: FindOneOptionsEx<T> = {}) {
+    async findOne<T>(type: Type<T>, query: Query<T>, options: FindOptionsEx<T> = {}) {
 
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
         this.formatOptions(options);
 
         const result = await collection.findOne(
-            this.normalizeQuery(def, query),
-            options
+            this.normalizeQuery(def, query) as any,
+            options as FindOptions
         );
 
         const document = result
@@ -180,15 +184,15 @@ export class DbContext {
      * @param query 
      * @param options 
      */
-    async find<T>(type: Type<T>, query: Query<T>, options: FindOneOptionsEx<T> = {}) {
+    async find<T>(type: Type<T>, query: Query<T>, options: FindOptionsEx<T> = {}) {
 
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
         this.formatOptions(options);
 
         let cursor = collection.find(
-            this.normalizeQuery(def, query),
-            options
+            this.normalizeQuery(def, query) as any,
+            options as FindOptions
         );
 
         const result = await cursor.toArray();
@@ -207,14 +211,14 @@ export class DbContext {
      * @param obj 
      * @param options 
      */
-    async insertOne<T>(obj: T, options: CollectionInsertOneOptions = {}) {
+    async insertOne<T>(obj: T, options: InsertOneOptions = {}) {
 
         const type = (obj as any).constructor;
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
         this.formatOptions(options);
 
-        const document = this.prepareInsertOp(obj, def);
+        const document: OptionalId<any> = this.prepareInsertOp(obj, def);
 
         const result = await collection.insertOne(document, options);
 
@@ -234,7 +238,7 @@ export class DbContext {
      * @param docs 
      * @param options 
      */
-    async insertMany<T>(type: Type<T>, docs: T[], options: CollectionInsertManyOptions = {}) {
+    async insertMany<T>(type: Type<T>, docs: T[], options: BulkWriteOptions = {}) {
 
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
@@ -262,7 +266,7 @@ export class DbContext {
      * @param extraOps 
      * @param options 
      */
-    async updateOne<T>(obj: T, extraOps?: Update<T>, options: UpdateOneOptions = {}) {
+    async updateOne<T>(obj: T, extraOps?: Update<T>, options: UpdateOptions = {}) {
 
         const type = (obj as any).constructor;
         const def = this.getOrCreateDefinition(type);
@@ -297,7 +301,7 @@ export class DbContext {
 
         // update id on object if upsert === true
         if (result.upsertedId) {
-            (obj as any)[def.id.key] = result.upsertedId._id.toHexString();
+            (obj as any)[def.id.key] = result.upsertedId.toHexString();
         }
 
         await this.invokeHooks('updateOne', { def, result, options, op, target: obj, value: document });
@@ -313,7 +317,7 @@ export class DbContext {
      * @param ops 
      * @param options 
      */
-    async updateMany<T>(type: Type<T>, query: Query<T>, ops: Update<T>, options: UpdateManyOptions = {}) {
+    async updateMany<T>(type: Type<T>, query: Query<T>, ops: Update<T>, options: UpdateOptions = {}) {
 
         const def = this.getOrCreateDefinition(type);
         const collection = this._db.collection(def.collName);
@@ -328,16 +332,16 @@ export class DbContext {
 
         // get documents into memory before running the update op
         if (has_hooks) {
-            const cursor = await collection.find(q);
+            const cursor = await collection.find(q as any);
             documents = await cursor.toArray();
         }
 
-         // format ops
+        // format ops
         this.normalizeUpdateOp(def, ops);
-        
+
         const result = await collection.updateMany(
-            q,
-            ops,
+            q as any,
+            ops as any,
             options
         );
 
@@ -356,7 +360,7 @@ export class DbContext {
      * @param obj 
      * @param options 
      */
-    async deleteOne<T>(obj: T, options: FindOneAndDeleteOption = {}) {
+    async deleteOne<T>(obj: T, options: FindOneAndDeleteOptions = {}) {
 
         const type = (obj as any).constructor;
         const def = this.getOrCreateDefinition(type);
@@ -385,7 +389,7 @@ export class DbContext {
      * @param query 
      * @param options 
      */
-    async deleteMany<T>(type: Type<T>, query: Query<T>, options: CommonOptions = {}) {
+    async deleteMany<T>(type: Type<T>, query: Query<T>, options: DeleteOptions = {}) {
 
 
         const def = this.getOrCreateDefinition(type);
@@ -401,12 +405,12 @@ export class DbContext {
 
         // get documents into memory before running the delete op
         if (has_hooks) {
-            const cursor = await collection.find(q);
+            const cursor = await collection.find(q as any);
             documents = await cursor.toArray();
         }
 
         const result = await collection.deleteMany(
-            q,
+            q as any,
             options
         );
 
@@ -423,7 +427,7 @@ export class DbContext {
      * @param query 
      * @param options 
      */
-    async aggregate<T>(query: AggregateQuery<T>, options: CollectionAggregationOptions = {}) {
+    async aggregate<T>(query: AggregateQuery<T>, options: AggregateOptions = {}) {
 
         const def = this.getOrCreateDefinition(query.type);
         const collection = this._db.collection(def.collName);
@@ -644,8 +648,8 @@ export class DbContext {
 
     private normalizeUpdateOp<T>(def: ModelDefinition<T>, ops: any) {
 
-        if(ops['$set']) {
-            CastRefsAsIds(def.model, ops['$set']);
+        for (let k in ops) {
+            CastRefsAsIds(def.model, ops[k]);
         }
     }
 
@@ -770,17 +774,17 @@ export class DbContext {
     }
 
 
-    private async invokeHooks(name: 'count', options: CountHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'findOne', options: FindOneHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'find', options: FindHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'insertOne', options: InsertOneHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'insertMany', options: InsertManyHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'updateOne', options: UpdateOneHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'updateMany', options: UpdateManyHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'deleteOne', options: DeleteOneHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'deleteMany', options: DeleteManyHookParams<any>): Promise<void>;
-    private async invokeHooks(name: 'aggregate', options: AggregateHookParams<any>): Promise<void>;
-
+    /*private async invokeHooks(name: 'count', options: CountHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'findOne', options: FindOneHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'find', options: FindHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'insertOne', options: InsertOneHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'insertMany', options: InsertManyHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'updateOne', options: UpdateOneHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'updateMany', options: UpdateManyHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'deleteOne', options: DeleteOneHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'deleteMany', options: DeleteManyHookParams<any>): Promise<void>;
+     private async invokeHooks(name: 'aggregate', options: AggregateHookParams<any>): Promise<void>;
+ */
 
     private async invokeHooks(name: string, options: any) {
 
@@ -1017,7 +1021,13 @@ function CastRefsAsIds<T>(model: Model, value: any) {
                     value[k] = value[k].map((v: any) => new ObjectId(v[mem.model.id.key]));
                 }
                 else {
-                    value[k] = new ObjectId(value[k][mem.model.id.key]);
+
+                    if (value[k]['$each']) {
+                        value[k]['$each'] = value[k]['$each'].map((v: any) => new ObjectId(v[mem.model.id.key]));
+                    }
+                    else {
+                        value[k] = new ObjectId(value[k][mem.model.id.key]);
+                    }
                 }
             }
             else {
@@ -1028,12 +1038,26 @@ function CastRefsAsIds<T>(model: Model, value: any) {
                     });
                 }
                 else {
+
+                    if (value[k]['$each']) {
+                        value[k]['$each'].forEach((v: any, index: number) => {
+                            CastRefsAsIds(mem.model as Model, value[k]['$each'][index]);
+                        });
+                    }
+                    else {
+                        CastRefsAsIds(mem.model as Model, value[k]);
+                    }
+
                     CastRefsAsIds(mem.model as Model, value[k]);
                 }
             }
 
         }
     }
+
+}
+
+function CastRefsAsIdsCommand(model: Model, value: any) {
 
 }
 
