@@ -7,13 +7,12 @@ import { DbService } from './db.service';
 
 export function ProvideDbContext<T extends DbContext>(connectionName: string,
     dbName: string,
-    collections: DbCollectionDefinition<any>[],
     token?: Type<T>) {
 
     return {
         token: token || DbContext,
         factory: (service: DbService) => {
-            return service.createContext(connectionName, dbName, collections);
+            return service.createContext(connectionName, dbName);
         },
         deps: [DbService]
     };

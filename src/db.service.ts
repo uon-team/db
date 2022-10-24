@@ -1,10 +1,11 @@
 
-import { Injectable, Inject, Injector } from '@uon/core';
+import { Injectable, Inject, Injector, Type } from '@uon/core';
 import { DB_MODULE_CONFIG, DbModuleConfig, DbCollectionDefinition } from './db.config';
 import { DbContext } from './db.context';
 import { MongoClient } from 'mongodb';
 import { IndexDefinition } from './mongo/index.interface';
 import { DbHook } from './db.hooks';
+import { GetDbSchema } from './db.metadata';
 
 
 @Injectable()
@@ -27,7 +28,6 @@ export class DbService {
      */
     async createContext(connectionName: string,
         dbName: string,
-        collections: DbCollectionDefinition<any>[],
         hooks: DbHook[] = [],
         injector: Injector = this._injector) {
 
@@ -38,7 +38,6 @@ export class DbService {
         const context = new DbContext({
             client,
             dbName,
-            collections,
             injector,
             hooks
         });
@@ -80,7 +79,7 @@ export class DbService {
      */
     async syncIndices(connectionName: string,
         dbName: string,
-        collections: DbCollectionDefinition<any>[]) {
+        models: Type<any>[]) {
 
         const conn_def = this.findConnectionOrThrow(connectionName);
 
@@ -94,27 +93,29 @@ export class DbService {
         const db = client.db(dbName);
 
         // iterate over all defined collection for this db
-        for (let i = 0; i < collections.length; ++i) {
+        for (let i = 0; i < models.length; ++i) {
 
-            const col_def = collections[i];
+            const model = models[i];
+
+            const col_def = GetDbSchema(model);
 
             // might not have any indices
             if (!col_def.indices) {
                 continue;
             }
 
-            console.log(`Syncing indices for ${col_def.name}`);
+            console.log(`Syncing indices for ${col_def.collection}`);
 
             try {
-                await db.createCollection(col_def.name, {  });
-                console.log(`Creating Collection ${col_def.name}`);
+                await db.createCollection(col_def.collection, {  });
+                console.log(`Creating Collection ${col_def.collection}`);
             }
             catch(e) {
                 
             }
 
             // grab the collection 
-            const collection = db.collection(col_def.name);
+            const collection = db.collection(col_def.collection);
 
             // grab existing indices
             const indexes: any[] = await collection.indexes();

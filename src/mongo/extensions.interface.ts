@@ -1,9 +1,9 @@
-import { FindOptions } from "mongodb";
+import { CommandOperationOptions, FindOptions } from "mongodb";
 import { QueryProjection } from "./query.interface";
 import { SortableFields } from "./aggregate.interface";
 
 
-export interface FindOptionsEx<T> {
+export interface FindOptionsEx<T> extends CommandOperationOptions {
 
     /**
      * The fields to project in the result

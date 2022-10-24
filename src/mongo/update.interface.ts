@@ -1,6 +1,6 @@
 
 import { Unpack, PropertyNamesOfType, PropertyNamesNotOfType } from '@uon/core';
-
+import { Query } from './query.interface';
 
 
 export type AssignmentOp<T> = Partial<Pick<T, PropertyNamesNotOfType<T, Function>>> & { [k: string]: any };
@@ -30,6 +30,10 @@ export type ArrayAddToSetOp<T, U = Partial<Pick<T, PropertyNamesOfType<T, any[]>
 
 export type ArrayPushOp<T, U = Partial<Pick<T, PropertyNamesOfType<T, any[]>>>> = {
     [K in keyof U]: Unpack<U[K]> | ArrayUpdateOpModifier<U[K]> | ArrayEachOpModifier<U[K]>
+};
+
+export type ArrayPullOp<T, U = Partial<Pick<T, PropertyNamesOfType<T, any[]>>>> = {
+    [K in keyof U]: Query<Unpack<U[K]>>
 };
 
 export type Update<T> = FieldUpdateOp<T> & ArrayUpdateOp<T> & BitwiseUpdateOp<T>;
@@ -109,7 +113,7 @@ export interface ArrayUpdateOp<T> {
     /**
      * Removes all array elements that match a specified query.
      */
-    $pull?: any;
+    $pull?: ArrayPullOp<T>;
 
     /**
      * Adds an item to an array.

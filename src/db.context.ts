@@ -1,5 +1,5 @@
-import { MongoClient, Db, ClientSession, ObjectId, CountDocumentsOptions, Filter, DeleteOptions, FindOptions, OptionalId, InsertOneOptions, BulkWriteOptions, UpdateOptions, UpdateFilter, FindOneAndDeleteOptions, AggregateOptions } from "mongodb";
-import { Type, Injector, Provider } from "@uon/core";
+import { MongoClient, Db, ClientSession, ObjectId, CountDocumentsOptions, Filter, DeleteOptions, FindOptions, OptionalId, InsertOneOptions, BulkWriteOptions, UpdateOptions, UpdateFilter, FindOneAndDeleteOptions, AggregateOptions, TransactionOptions, CommandOperationOptions, ChangeStreamOptions } from "mongodb";
+import { Type, Injector, Provider, Unpack } from "@uon/core";
 import { ID, JsonSerializer, Model, FindModelAnnotation, GetModelMembers, Member } from "@uon/model";
 import { Query, QueryProjection } from "./mongo/query.interface";
 import { ModelDefinition } from "./db.interfaces";
@@ -8,11 +8,11 @@ import { AggregateQuery } from "./mongo/aggregate.interface";
 import { DbCollectionDefinition } from "./db.config";
 import { DbHook, CountHookParams, FindOneHookParams, FindHookParams, InsertOneHookParams, InsertManyHookParams, UpdateOneHookParams, UpdateManyHookParams, DeleteOneHookParams, DeleteManyHookParams, AggregateHookParams } from "./db.hooks";
 import { FindOptionsEx } from "./mongo/extensions.interface";
+import { GetDbSchema } from "./db.metadata";
 
 
 
 const HOOK_METHODS = ['count', 'findOne', 'find', 'insertOne', 'insertMany', 'updateOne', 'updateMany', 'deleteOne', 'deleteMany', 'aggregate'];
-const FORMATABLE_TOP_LEVEL_OPS = ['$or', '$and'];
 
 export interface DbContextOptions {
 
@@ -27,11 +27,6 @@ export interface DbContextOptions {
     dbName: string;
 
     /**
-     * The list of collections
-     */
-    collections: DbCollectionDefinition<any>[];
-
-    /**
      * The injector to use to instanciate hooks
      */
     injector: Injector;
@@ -43,9 +38,13 @@ export interface DbContextOptions {
 
 }
 
-interface MongoDocument {
-    _id: any;
-}
+export interface DbDereferenceOptions {
+    assignNullToMissingDocument?: boolean;
+};
+
+const DEFAULT_DEREF_OPTIONS: DbDereferenceOptions = {
+    assignNullToMissingDocument: true
+};
 
 
 /**
@@ -53,12 +52,12 @@ interface MongoDocument {
  */
 export class DbContext {
 
-    private _client: MongoClient;
-    private _db: Db;
-    private _clientSession: ClientSession;
+    protected _client: MongoClient;
+    protected _db: Db;
     private _hooksByMethod: { [k: string]: DbHook[] } = {};
     private _injector: Injector;
-    private _collections: Map<Type<any>, ModelDefinition<any>> = new Map();
+    protected _collections: Map<Type<any>, ModelDefinition<any>> = new Map();
+    protected _session: ClientSession;
 
     constructor(private _options: DbContextOptions) {
 
@@ -72,10 +71,7 @@ export class DbContext {
         this._injector = Injector.Create(providers, _options.injector);
 
         // hooks setup
-        this.setupHooks()
-
-        // persistent model setup
-        this.setupModelDefinitions();
+        this.setupHooks();
 
     }
 
@@ -86,47 +82,20 @@ export class DbContext {
         return this._db;
     }
 
+    get client() {
+        return this._client;
+    }
 
 
-    /*
-        startTransaction(options?: TransactionOptions) {
-    
-            if (!this._clientSession) {
-                this._clientSession = this._client.startSession();
-            }
-    
-            this._clientSession.startTransaction(options);
-    
-        }
-    
-        async commitTransaction() {
-    
-    
-            if (!this._clientSession) {
-                throw new Error(`No transaction to commit`);
-            }
-    
-            await this._clientSession.commitTransaction();
-    
-            this._clientSession.endSession();
-            this._clientSession = null;
-    
-        }
-    
-        async abortTransaction() {
-    
-            if (!this._clientSession) {
-                throw new Error(`No transaction to commit`);
-            }
-    
-            await this._clientSession.abortTransaction();
-    
-            this._clientSession.endSession();
-            this._clientSession = null;
-    
-        }
-    */
+    async watch<T>(type: Type<T>, pipeline: AggregateQuery<T>, options?: ChangeStreamOptions) {
 
+        const def = this.getOrCreateDefinition(type);
+        const collection = this._db.collection(def.collName);
+
+        const change_stream = collection.watch(pipeline.pipeline, options);
+
+
+    }
 
     /**
      * Count all documents matching the query
@@ -141,7 +110,7 @@ export class DbContext {
         this.formatOptions(options);
 
         const result = await collection.countDocuments(
-            this.normalizeQuery(def, query) as any,
+            this.normalizeTopLevelQuery(def, query) as any,
             options
         );
 
@@ -164,7 +133,7 @@ export class DbContext {
         this.formatOptions(options);
 
         const result = await collection.findOne(
-            this.normalizeQuery(def, query) as any,
+            this.normalizeTopLevelQuery(def, query) as any,
             options as FindOptions
         );
 
@@ -191,7 +160,7 @@ export class DbContext {
         this.formatOptions(options);
 
         let cursor = collection.find(
-            this.normalizeQuery(def, query) as any,
+            this.normalizeTopLevelQuery(def, query) as any,
             options as FindOptions
         );
 
@@ -223,7 +192,7 @@ export class DbContext {
         const result = await collection.insertOne(document, options);
 
         if (result.insertedId) {
-            (obj as any)[def.id.key] = result.insertedId.toHexString();
+            (obj as any)[def.id.key] = NormalizeModelId(def.id, result.insertedId);
         }
 
         await this.invokeHooks('insertOne', { def, result, options, data: document });
@@ -250,7 +219,7 @@ export class DbContext {
 
         // update id's
         docs.forEach((v, i) => {
-            (v as any)[def.id.key] = result.insertedIds[i].toHexString();
+            (v as any)[def.id.key] = NormalizeModelId(def.id, result.insertedIds[i]);
         });
 
 
@@ -294,14 +263,14 @@ export class DbContext {
         }
 
         // prepare the update operation
-        const op: any = this.prepareUpdateOp(obj, def, extraOps);
+        const op: any = this.prepareSetUnsetUpdateOp(obj, def, extraOps);
 
         // make the call
         const result = await collection.updateOne(query, op, options);
 
         // update id on object if upsert === true
         if (result.upsertedId) {
-            (obj as any)[def.id.key] = result.upsertedId.toHexString();
+            (obj as any)[def.id.key] = NormalizeModelId(def.id, result.upsertedId);
         }
 
         await this.invokeHooks('updateOne', { def, result, options, op, target: obj, value: document });
@@ -328,7 +297,7 @@ export class DbContext {
         const has_hooks = this.hasHooks('updateMany');
         let documents: any[];
 
-        const q = this.normalizeQuery(def, query);
+        const q = this.normalizeTopLevelQuery(def, query);
 
         // get documents into memory before running the update op
         if (has_hooks) {
@@ -401,7 +370,7 @@ export class DbContext {
         let documents: any[];
 
         //const delete_hooks = this.getHooks('delete');
-        const q = this.normalizeQuery(def, query);
+        const q = this.normalizeTopLevelQuery(def, query);
 
         // get documents into memory before running the delete op
         if (has_hooks) {
@@ -455,14 +424,16 @@ export class DbContext {
      * @param list 
      * @param fields 
      */
-    async dereference<T>(docs: T[], fields: { [k: string]: QueryProjection<any> }) {
+    async dereference<T>(docs: T[],
+        fields: { [K in keyof T]?: QueryProjection<Unpack<T[K]>> },
+        options: DbDereferenceOptions = DEFAULT_DEREF_OPTIONS) {
 
         if (docs.length === 0) {
             return docs;
         }
 
 
-        const field_keys = Object.keys(fields);
+        const field_keys = Object.keys(fields) as (keyof T)[];
 
         const ref_list_by_type = new Map<Type<any>, string[]>();
         const proj_by_type = new Map<Type<any>, QueryProjection<any>>();
@@ -539,13 +510,12 @@ export class DbContext {
             // find all objects
             let p = this.find(type, { '_id': { $in: idList } }, {
                 projection: proj_by_type.get(type)
-            })
-                .then((results) => {
-                    results.forEach((r) => {
-                        map_by_id[r[col_def.id.key]] = r;
-                    });
-
+            }).then((results) => {
+                results.forEach((r) => {
+                    map_by_id[r[col_def.id.key]] = r;
                 });
+
+            });
 
             promises.push(p);
 
@@ -565,7 +535,9 @@ export class DbContext {
 
                 let f = members[j];
                 let field_type = f.type;
-                let col_def = this.getOrCreateDefinition(type, false);
+
+                let col_def = this.getOrCreateDefinition(field_type, false);
+                //console.log(col_def);
 
                 // get the id list for this type
                 let values = value_map.get(field_type);
@@ -585,10 +557,18 @@ export class DbContext {
                     old_value.forEach((v: any, index: number) => {
 
                         let canonical_id = v[col_def.id.key];
-                        old_value[index] = values[canonical_id];
+
+                        if (values[canonical_id] !== undefined) {
+                            old_value[index] = values[canonical_id];
+                        }
+                        // we might want to assign null for missing documents
+                        else if (options.assignNullToMissingDocument === true) {
+
+                            old_value[index] = null;
+                        }
+
 
                     });
-
                 }
                 // or just a single ref
                 else {
@@ -600,9 +580,12 @@ export class DbContext {
                     if (values[canonical_id] !== undefined) {
                         model[f.key] = values[canonical_id];
                     }
-
-
+                    // we might want to assign null for missing documents
+                    else if (options.assignNullToMissingDocument === true) {
+                        model[f.key] = null;
+                    }
                 }
+                Model.MakeClean(model, [f.key]);
 
             }
 
@@ -618,10 +601,10 @@ export class DbContext {
      * Format common options depending on context state
      * @param options 
      */
-    private formatOptions(options: any) {
+    private formatOptions(options: CommandOperationOptions) {
 
-        if (this._clientSession) {
-            options.session = this._clientSession;
+        if (this._session) {
+            options.session = this._session;
         }
     }
 
@@ -630,7 +613,6 @@ export class DbContext {
      * @param type 
      */
     private getOrCreateDefinition<T>(type: Type<T>, throwOnNotFound = true) {
-
 
         if (this._collections.has(type)) {
             return this._collections.get(type) as ModelDefinition<T>;
@@ -649,7 +631,26 @@ export class DbContext {
     private normalizeUpdateOp<T>(def: ModelDefinition<T>, ops: any) {
 
         for (let k in ops) {
-            CastRefsAsIds(def.model, ops[k]);
+
+            // $pull has special behavior, it's a query
+            if (k === '$pull') {
+                let keys = Object.keys(ops[k]);
+                for (let pk in ops[k]) {
+                    let m = def.members.find((mem) => {
+                        return mem.key === pk;
+                    });
+
+                    if (m?.model) {
+                        let mdef = this.getOrCreateDefinition(m.type, false);
+                        this.normalizeTopLevelQuery(mdef, ops[k][pk]);
+                    }
+
+                }
+            }
+            else {
+                CastRefsAsIds(def.model, ops[k]);
+            }
+
         }
     }
 
@@ -660,7 +661,7 @@ export class DbContext {
      * @param out 
      * @param keyPrefix 
      */
-    private prepareUpdateOp<T>(obj: T, def: ModelDefinition<T>, out?: any, keyPrefix?: string) {
+    private prepareSetUnsetUpdateOp<T>(obj: T, def: ModelDefinition<T>, out?: any, keyPrefix?: string) {
 
         out = out || {};
         keyPrefix = keyPrefix ? keyPrefix + '.' : '';
@@ -668,7 +669,7 @@ export class DbContext {
         const m = (obj as any);
         const dirty: any = Model.GetMutations(obj);
 
-
+        // prepare $set and $unset on dirty fields
         for (let i = 0; i < def.members.length; ++i) {
 
             const f = def.members[i];
@@ -681,7 +682,7 @@ export class DbContext {
             // update embeded child object fields in the case where
             // the whole object hasn't change
             if (f.model && !f.model.id && !is_dirty && m[f.key]) {
-                this.prepareUpdateOp(m[f.key], member_def, out, prefixed_key);
+                this.prepareSetUnsetUpdateOp(m[f.key], member_def, out, prefixed_key);
             }
 
             if (is_dirty) {
@@ -701,7 +702,9 @@ export class DbContext {
                     if (f.model) {
                         out.$set[prefixed_key] = f.model.id
                             ? EnsureId(value, f.model.id)
-                            : member_def.serializer.serialize(value);
+                            : Array.isArray(value)
+                                ? value.map(v => CastRefsAsIds(f.model as Model, member_def.serializer.serialize(v)))
+                                : CastRefsAsIds(f.model as Model, member_def.serializer.serialize(value));
                     }
                     else {
                         out.$set[prefixed_key] = value;
@@ -712,16 +715,12 @@ export class DbContext {
 
         }
 
-        // TODO handle array modifiers
-
-
-
         return out;
 
     }
 
     /**
-     * Generate an insert operation that mongo will understand
+     * Generate an insert operation
      * @param obj 
      * @param def 
      */
@@ -729,7 +728,7 @@ export class DbContext {
 
         const result: any = def.serializer.serialize(obj);
 
-        if (IsNativeId(result[def.id.key])) {
+        if (result[def.id.key]) {
             result._id = new ObjectId(result[def.id.key]);
             delete result[def.id.key];
         }
@@ -745,27 +744,48 @@ export class DbContext {
      * @param def 
      * @param query 
      */
-    private normalizeQuery<T>(def: ModelDefinition<T>, query: Query<T>) {
+    private normalizeTopLevelQuery<T>(def: ModelDefinition<T>, query: Query<T>) {
 
-        const query_keys = Object.keys(query);
+        if (Array.isArray(query['$or'])) {
+            query['$or'].forEach((v) => {
+                this.normalizeTopLevelQuery(def, v);
+            });
+        }
+        else if (Array.isArray(query['$and'])) {
+            query['$and'].forEach((v) => {
+                this.normalizeTopLevelQuery(def, v);
+            });
+        }
+        else {
+            const query_keys = Object.keys(query);
 
-        for (let i = 0; i < query_keys.length; ++i) {
+            for (let i = 0; i < query_keys.length; ++i) {
 
-            const key = query_keys[i];
-            const value = query[key];
+                const key = query_keys[i];
+                const value = query[key];
 
-            // handle _id
-            if (key === '_id' || key === def.id.key) {
-                delete query[key];
-                (query as any)['_id'] = FormatQueryField(value, def.id);
-                continue;
-            }
 
-            // handle persistent ref
-            const ref = def.refsByKey[key];
+                // handle _id
+                if (def.id && (key === '_id' || key === def.id.key)) {
+                    delete query[key];
+                    (query as any)['_id'] = FormatQueryField(value, def.id);
+                    continue;
+                }
 
-            if (ref) {
-                (query as any)[key] = FormatQueryField(value, ref);
+                // handle persistent ref
+                const ref = def.refsByKey[key];
+                if (ref) {
+                    (query as any)[key] = FormatQueryField(value, ref);
+                    continue;
+                }
+
+                // handle embedded
+                const member = def.members.find(m => m.key === key);
+                if (member?.model) {
+                    let mdef = this.getOrCreateDefinition(member.type, false);
+                    this.normalizeTopLevelQuery(mdef, value);
+                }
+
             }
         }
 
@@ -774,17 +794,33 @@ export class DbContext {
     }
 
 
-    /*private async invokeHooks(name: 'count', options: CountHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'findOne', options: FindOneHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'find', options: FindHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'insertOne', options: InsertOneHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'insertMany', options: InsertManyHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'updateOne', options: UpdateOneHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'updateMany', options: UpdateManyHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'deleteOne', options: DeleteOneHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'deleteMany', options: DeleteManyHookParams<any>): Promise<void>;
-     private async invokeHooks(name: 'aggregate', options: AggregateHookParams<any>): Promise<void>;
- */
+    private normalizeQuery<T>(def: ModelDefinition<T>, query: Query<T>) {
+
+        // handle _id
+        if (def.id && (query[def.id.key] || query['_id'])) {
+            let val = query[def.id.key] || query['_id'];
+            delete query[def.id.key];
+            (query as any)['_id'] = FormatQueryField(val, def.id);
+        }
+
+        const query_keys = Object.keys(query).filter(k => k !== '_id');
+
+        for (let i = 0; i < query_keys.length; ++i) {
+
+            const key = query_keys[i];
+            const value = query[key];
+
+            // handle persistent ref
+            const ref = def.refsByKey[key];
+            if (ref) {
+                (query as any)[key] = FormatQueryField(value, ref);
+                continue;
+            }
+
+        }
+
+
+    }
 
     private async invokeHooks(name: string, options: any) {
 
@@ -840,20 +876,6 @@ export class DbContext {
         }
     }
 
-    private setupModelDefinitions() {
-
-        const colls = this._options.collections;
-        const map = this._collections;
-
-        for (let j = 0; j < colls.length; ++j) {
-
-            const coll_def = colls[j];
-            const def = CreateModelDefinition(coll_def.model, coll_def.name);
-            map.set(coll_def.model, def);
-        }
-
-    }
-
 
 }
 
@@ -872,10 +894,19 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
         return null;
     }
 
+
+
     const id = model.id;
     const members = GetModelMembers(model);
-    const refs: any = {};
+    const refs: any = {
+        //...id && { '_id': id, [id.key]: id }
+    };
     const ref_paths: any = {};
+    let coll_name: string = collName;
+    if (id) {
+        const schema_def = GetDbSchema(type);
+        coll_name = schema_def.collection; // model.name + (typeof model.version == 'number' ? `_v${Math.floor(model.version)}` : '');
+    }
 
 
     members.forEach((m) => {
@@ -884,7 +915,6 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
             if (mdl.id) {
                 refs[m.key] = m.model.id;
             }
-
         }
     });
 
@@ -893,7 +923,7 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
         model,
         id,
         members,
-        collName,
+        collName: coll_name,
         refsByKey: refs,
         serializer: new JsonSerializer(type)
     };
@@ -902,13 +932,6 @@ export function CreateModelDefinition<T>(type: Type<T>, collName: string = null,
 
 
 }
-
-
-
-/**
- * cache for model definitions, by type
- */
-const MODEL_DEF_CACHE = new Map<Type<any>, ModelDefinition<any>>();
 
 
 function FormatQueryField(value: any, id: ID) {
@@ -954,7 +977,7 @@ function CastIdsAsRefs<T>(model: Model, value: any) {
 
     // map _id to model id field, if defined
     if (value._id && model.id) {
-        value[model.id.key] = value._id.toHexString();
+        value[model.id.key] = NormalizeModelId(model.id, value._id);
         delete value._id;
     }
 
@@ -973,11 +996,11 @@ function CastIdsAsRefs<T>(model: Model, value: any) {
 
                 if (Array.isArray(value[k])) {
                     value[k].forEach((v: any, index: number) => {
-                        value[k][index] = { [mem.model.id.key]: ID_TO_STRING(value[k][index]) };
+                        value[k][index] = { [mem.model.id.key]: NormalizeModelId(mem.model.id, value[k][index]) };
                     });
                 }
                 else {
-                    value[k] = { [mem.model.id.key]: ID_TO_STRING(value[k]) };
+                    value[k] = { [mem.model.id.key]: NormalizeModelId(mem.model.id, value[k]) };
                 }
 
             }
@@ -992,9 +1015,6 @@ function CastIdsAsRefs<T>(model: Model, value: any) {
                 else {
                     CastIdsAsRefs(mem.model as Model, value[k]);
                 }
-
-
-
             }
         }
 
@@ -1033,6 +1053,7 @@ function CastRefsAsIds<T>(model: Model, value: any) {
             else {
                 // go deep
                 if (Array.isArray(value[k])) {
+                    //console.log(value[k]);
                     value[k].forEach((v: any, index: number) => {
                         CastRefsAsIds(mem.model as Model, value[k][index]);
                     });
@@ -1053,10 +1074,19 @@ function CastRefsAsIds<T>(model: Model, value: any) {
         }
     }
 
+    return value;
+
 }
 
-function IsNativeId(value: any) {
-    return value && String(value).match(/^[a-fA-F0-9]{24}$/) !== null;
-}
+function NormalizeModelId(meta: ID, value: ObjectId) {
 
-const ID_TO_STRING = (id: ObjectId) => id.toHexString();
+    if (meta.type === String) {
+        return value.toHexString()
+    }
+    else if (meta.type === ObjectId) {
+        return value;
+    }
+
+    // unsupported id type
+    throw new Error('unsupported ID type')
+}

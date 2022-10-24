@@ -14,7 +14,7 @@ export function AuditHook(userId: string, metadata?: any) {
 
         async insertOne(params: InsertOneHookParams) {
 
-            if (params.result.insertedCount < 1) {
+            if (params.result.insertedId) {
                 return;
             }
             const collection = this.context.db.collection(collection_name);
