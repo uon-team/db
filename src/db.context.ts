@@ -197,6 +197,9 @@ export class DbContext {
 
         await this.invokeHooks('insertOne', { def, result, options, data: document });
 
+        // clear mutations
+        Model.MakeClean(obj);
+
         return result;
 
     }
@@ -224,6 +227,11 @@ export class DbContext {
 
 
         await this.invokeHooks('insertMany', { def, result, options, data: documents });
+
+         // clear mutations
+        docs.forEach((d) => {
+            Model.MakeClean(d);
+        });
 
         return result;
     }
@@ -275,6 +283,9 @@ export class DbContext {
 
         await this.invokeHooks('updateOne', { def, result, options, op, target: obj, value: document });
 
+
+        // clear mutations
+        Model.MakeClean(obj);
 
         return result;
     }
