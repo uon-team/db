@@ -86,6 +86,10 @@ export class DbContext {
         return this._client;
     }
 
+    get session() {
+        return this._session;
+    }
+
 
     async watch<T>(type: Type<T>, pipeline: AggregateQuery<T>, options?: ChangeStreamOptions) {
 
